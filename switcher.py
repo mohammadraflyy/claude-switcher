@@ -13,6 +13,8 @@ import sys
 from ctypes import wintypes
 from pathlib import Path
 
+__version__ = "1.0.0"
+
 HOME = Path.home()
 CRED = HOME / ".claude" / ".credentials.json"
 IDENT = HOME / ".claude.json"

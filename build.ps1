@@ -2,7 +2,7 @@
 # Usage: powershell -ExecutionPolicy Bypass -File build.ps1
 $ErrorActionPreference = "Stop"
 Set-Location $PSScriptRoot
-$version = "1.0.0"
+$version = (Select-String -Path "switcher.py" -Pattern '__version__ = "(.+)"').Matches[0].Groups[1].Value
 
 if (-not (Test-Path ".venv\Scripts\python.exe")) { python -m venv .venv }
 $py = ".venv\Scripts\python.exe"
