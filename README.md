@@ -16,7 +16,7 @@ The installer is not code-signed, so Windows SmartScreen may warn you: click **M
 4. Run `claude /login` with your other account, then press **Save current login** again.
 5. Pick an account in the dashboard (or right-click the tray icon, then **Accounts**) to switch.
 
-New `claude` sessions use the active account. A session that is already running keeps the account it started with, so open a new one after switching. The dashboard shows how many are running and asks before you switch (native `claude.exe` installs only).
+New `claude` sessions use the active account. A session that is already running keeps the account it started with, so open a new one after switching. The dashboard shows how many are running and asks before you switch (native and npm installs).
 
 Also in the dashboard and tray:
 
@@ -25,6 +25,8 @@ Also in the dashboard and tray:
 - **Expired logins** are marked; log in again with `claude /login` and save.
 - **Backup / Restore** of the saved accounts. The file stays DPAPI-encrypted, so it only restores for the same Windows user.
 - **Remove account** from the tray menu.
+- **Unsaved login notice:** after `claude /login` the tray reminds you to save the new login.
+- **Update check:** every 6 hours the tray makes one anonymous request to the GitHub Releases API and shows a banner when a newer version exists. Nothing about you is sent. Switch it off with **Check for updates automatically** in the tray menu.
 
 ## How it works
 

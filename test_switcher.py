@@ -146,6 +146,61 @@ class FeatureTest(SwitchTest):
         self.assertEqual(switcher.STORE.read_text(), before)
 
 
+class UpdatesAndNoticesTest(SwitchTest):
+    def test_unsaved_email_and_settings(self):
+        self.assertEqual(switcher.unsaved_email(), "a1@x.test")
+        switcher.save_current()
+        self.assertIsNone(switcher.unsaved_email())
+        self.assertTrue(switcher.get_setting("update_check", True))
+        switcher.set_setting("update_check", False)
+        self.assertFalse(switcher.get_setting("update_check", True))
+
+    def test_version_compare_is_numeric(self):
+        import updates
+        self.assertGreater(updates._ver("1.10.0"), updates._ver("1.9.0"))
+        self.assertGreater(updates._ver("v1.2.1"), updates._ver("1.2.0"))
+
+    def test_check_only_reports_newer_release(self):
+        import updates
+        self.addCleanup(setattr, updates, "available", None)
+        orig = updates.latest
+        self.addCleanup(setattr, updates, "latest", orig)
+        updates.latest = lambda: (switcher.__version__, updates.PAGE_PREFIX + "x")
+        self.assertIsNone(updates.check())
+        updates.latest = lambda: ("99.0.0", updates.PAGE_PREFIX + "releases/tag/v99.0.0")
+        self.assertEqual(updates.check()[0], "99.0.0")
+
+    def test_release_page_outside_the_repo_is_rejected(self):
+        import io
+        import updates
+
+        class Resp(io.BytesIO):
+            __enter__ = lambda self: self
+            __exit__ = lambda self, *a: None
+
+        orig = updates.urllib.request.urlopen
+        self.addCleanup(setattr, updates.urllib.request, "urlopen", orig)
+        body = lambda url: Resp(json.dumps({"tag_name": "v9.0.0", "html_url": url}).encode())
+        updates.urllib.request.urlopen = lambda *a, **k: body("https://evil.test/x")
+        self.assertIsNone(updates.latest())
+        updates.urllib.request.urlopen = lambda *a, **k: body(updates.PAGE_PREFIX + "releases/tag/v9.0.0")
+        self.assertEqual(updates.latest()[0], "9.0.0")
+
+    def test_npm_install_sessions_are_counted(self):
+        import shutil
+        import subprocess
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node not installed")
+        switcher._npm_cache = (0.0, 0)
+        before = switcher._npm_sessions()
+        p = subprocess.Popen([node, "-e", "setTimeout(()=>{},20000)", "C:/x/node_modules/@anthropic-ai/claude-code/cli.js"],
+                             creationflags=switcher._NO_WINDOW)
+        self.addCleanup(lambda: (p.kill(), p.wait()))
+        switcher._npm_cache = (0.0, 0)
+        self.assertEqual(switcher._npm_sessions(), before + 1)
+
+
 class DashboardTest(SwitchTest):
     def setUp(self):
         super().setUp()

@@ -16,7 +16,7 @@ import time
 from ctypes import wintypes
 from pathlib import Path
 
-__version__ = "1.2.0"
+__version__ = "1.3.0"
 
 HOME = Path.home()
 CRED = HOME / ".claude" / ".credentials.json"
@@ -120,13 +120,36 @@ def details():
             "org": a.get("organizationName", ""), "plan": o.get("subscriptionType", ""), "active": uid == cur,
             "label": v.get("label", ""), "color": v.get("color", ""), "expired": _expired(o),
         })
-    unsaved = None
+    return out, unsaved_email()
+
+
+def unsaved_email():
+    """Email of the logged-in account when it is not saved yet, else None."""
+    cur = current()
     if cur and cur not in _store():
         try:
-            unsaved = _read(IDENT)["oauthAccount"].get("emailAddress", cur)
+            return _read(IDENT)["oauthAccount"].get("emailAddress", cur)
         except (OSError, KeyError, ValueError):
             pass
-    return out, unsaved
+    return None
+
+
+def get_setting(key, default=None):
+    try:
+        return _read(STORE.with_name("settings.json")).get(key, default)
+    except (OSError, ValueError):
+        return default
+
+
+def set_setting(key, value):
+    with _LOCK:
+        path = STORE.with_name("settings.json")
+        try:
+            data = _read(path)
+        except (OSError, ValueError):
+            data = {}
+        data[key] = value
+        _write(path, data)
 
 
 def switch(uid):
@@ -225,16 +248,37 @@ def sync_active(settle=2.0):
         return False
 
 
+_NO_WINDOW = 0x08000000  # CREATE_NO_WINDOW
+_npm_cache = (0.0, 0)  # (time, count): the PowerShell lookup is slow, the dashboard polls every 5s
+
+
+def _npm_sessions():
+    """Claude Code installed with npm runs as `node.exe ...@anthropic-ai/claude-code/cli.js`."""
+    global _npm_cache
+    if time.time() - _npm_cache[0] < 15:
+        return _npm_cache[1]
+    ps = ("(Get-CimInstance Win32_Process -Filter \"Name='node.exe'\" | "
+          "Where-Object { $_.CommandLine -match 'anthropic-ai[\\\\/]claude-code' } | Measure-Object).Count")
+    try:
+        out = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", ps],
+                             capture_output=True, text=True, timeout=15, creationflags=_NO_WINDOW).stdout
+        n = int(out.strip() or 0)
+    except (OSError, subprocess.SubprocessError, ValueError):
+        n = 0
+    _npm_cache = (time.time(), n)
+    return n
+
+
 def running_sessions():
-    """Number of running `claude.exe` processes (native install). npm installs run as node.exe and are not counted."""
+    """Number of running Claude Code processes: native `claude.exe` plus npm installs."""
     try:
         out = subprocess.run(
             ["tasklist", "/FI", "IMAGENAME eq claude.exe", "/FO", "CSV", "/NH"],
-            capture_output=True, text=True, timeout=10, creationflags=0x08000000,  # CREATE_NO_WINDOW
+            capture_output=True, text=True, timeout=10, creationflags=_NO_WINDOW,
         ).stdout
     except (OSError, subprocess.SubprocessError):
-        return 0
-    return sum(1 for line in out.splitlines() if line.lower().startswith('"claude.exe"'))
+        out = ""
+    return sum(1 for line in out.splitlines() if line.lower().startswith('"claude.exe"')) + _npm_sessions()
 
 
 def main(argv):

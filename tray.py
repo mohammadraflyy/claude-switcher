@@ -12,6 +12,7 @@ from PIL import Image, ImageDraw
 
 import dashboard
 import switcher
+import updates
 
 try:
     import winreg
@@ -96,6 +97,9 @@ def _menu(url):
     def toggle_start(icon, item):
         set_autostart(not autostart_enabled())
 
+    def toggle_updates(icon, item):
+        switcher.set_setting("update_check", not switcher.get_setting("update_check", True))
+
     def remove(uid, email):
         def run(icon, item):
             ask = f"Remove {email} from Claude Switcher?\nYou stay logged in if it is the active account."
@@ -125,6 +129,11 @@ def _menu(url):
         pystray.MenuItem(f"Next account ({HOTKEY_TEXT})", next_account),
         pystray.MenuItem("Save current login", add),
         pystray.MenuItem("Remove account", pystray.Menu(removable)),
+        pystray.MenuItem(lambda item: f"Update available: v{updates.available[0]}",
+                         lambda icon, item: webbrowser.open(updates.available[1]),
+                         visible=lambda item: updates.available is not None),
+        pystray.MenuItem("Check for updates automatically", toggle_updates,
+                         checked=lambda item: switcher.get_setting("update_check", True)),
         pystray.MenuItem("Start with Windows", toggle_start, checked=lambda item: autostart_enabled(),
                          visible=getattr(sys, "frozen", False)),
         pystray.MenuItem("Quit", lambda icon, item: icon.stop()),
@@ -136,22 +145,38 @@ def _single_instance():
     return ctypes.windll.kernel32.GetLastError() != 183  # ERROR_ALREADY_EXISTS
 
 
-def _sync_loop(every=30):
-    """Keep the active account's saved copy fresh: Claude Code rotates tokens while it runs."""
+def _watch_loop(icon, every=30):
+    """Background upkeep: keep the active account's saved copy fresh (Claude Code rotates tokens),
+    nudge about a login that is not saved yet, and look for a newer release every 6 hours."""
+    unsaved = told = None
+    last_check = 0.0
     while True:
         time.sleep(every)
-        switcher.sync_active()
+        try:
+            switcher.sync_active()
+            email = switcher.unsaved_email()
+            if email and email != unsaved:
+                icon.notify(f"{email} is logged in but not saved. Open the dashboard to save it.", "Claude Switcher")
+            unsaved = email
+            if switcher.get_setting("update_check", True) and time.time() - last_check > 6 * 3600:
+                last_check = time.time()
+                found = updates.check()
+                if found and found[0] != told:
+                    told = found[0]
+                    icon.notify(f"Version {found[0]} is available. Use the tray menu to download it.", "Claude Switcher")
+        except Exception:
+            pass  # upkeep must never take the tray down
 
 
 def main():
     if not _single_instance():
         return
-    threading.Thread(target=_sync_loop, daemon=True).start()
     _, url = dashboard.start()
     if not switcher.accounts():
         webbrowser.open(url)  # first run: show where to start
     icon = pystray.Icon("claude-switcher", _icon(), "Claude Switcher", _menu(url))
     threading.Thread(target=_hotkey_loop, args=(icon,), daemon=True).start()
+    threading.Thread(target=_watch_loop, args=(icon,), daemon=True).start()
     icon.run()
 
 

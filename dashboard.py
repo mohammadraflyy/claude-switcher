@@ -5,6 +5,7 @@ import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import switcher
+import updates
 
 PORT = 8766
 
@@ -48,6 +49,8 @@ async function load(){
   const j=await (await fetch('/api/accounts')).json();
   sessions=j.sessions;
   $('warn').replaceChildren();
+  if(j.update){const u=el('div','note','Version '+j.update[0]+' is available. ');
+    const l=el('a','','Download');l.href=j.update[1];l.target='_blank';l.rel='noopener';u.append(l);$('warn').append(u)}
   if(sessions)$('warn').append(el('div','note',sessions+' claude session'+(sessions>1?'s are':' is')+' running. Sessions keep the account they started with; open a new session after switching.'));
   $('note').replaceChildren();
   if(j.unsaved){const n=el('div','note');n.append(el('div','',j.unsaved+' is logged in but not saved yet. '));
@@ -109,7 +112,7 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == "/api/accounts":
             accounts, unsaved = switcher.details()
             return self._send(200, {"accounts": accounts, "unsaved": unsaved, "sessions": switcher.running_sessions(),
-                                    "colors": switcher.COLORS})
+                                    "colors": switcher.COLORS, "update": updates.available})
         if self.path == "/api/backup":
             data = json.dumps(switcher.export_store(), indent=2).encode()
             self.send_response(200)
