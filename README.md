@@ -2,6 +2,8 @@
 
 Keep several Claude Code logins in the Windows system tray and switch between them without logging in again.
 
+Website: **https://mohammadraflyy.github.io/claude-switcher/**
+
 ## Download
 
 Get `ClaudeSwitcher-Setup-x.y.z.exe` from **[Releases](https://github.com/mohammadraflyy/claude-switcher/releases/latest)** and run it. No admin rights needed.

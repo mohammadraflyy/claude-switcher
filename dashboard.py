@@ -10,10 +10,10 @@ import updates
 PORT = 8766
 
 PAGE = """<!doctype html><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1">
-<title>Claude Switcher</title>
+<title>Claude Switcher</title><link rel=icon href=data:,>
 <style>
-:root{--bg:#faf9f5;--card:#fff;--fg:#1f1e1d;--mute:#73726c;--line:#e5e3da;--acc:#d97757;--ok:#2e7d4f}
-@media(prefers-color-scheme:dark){:root{--bg:#1f1e1d;--card:#2b2a28;--fg:#f0eee6;--mute:#a09f97;--line:#3d3b37;--ok:#6cc790}}
+:root{--bg:#faf9f5;--card:#fff;--fg:#1f1e1d;--mute:#73726c;--line:#e5e3da;--acc:#d97757;--ok:#2e7d4f;--bad:#c0392b}
+@media(prefers-color-scheme:dark){:root{--bg:#1f1e1d;--card:#2b2a28;--fg:#f0eee6;--mute:#a09f97;--line:#3d3b37;--ok:#6cc790;--bad:#ff8a7a}}
 body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,sans-serif}
 main{max-width:640px;margin:0 auto;padding:32px 16px}
 h1{font-size:22px;margin:0 0 4px}.sub{color:var(--mute);margin:0 0 24px}
@@ -22,12 +22,12 @@ h1{font-size:22px;margin:0 0 4px}.sub{color:var(--mute);margin:0 0 24px}
 .meta{color:var(--mute);font-size:13px}.badge{color:var(--ok);font-size:12px;font-weight:600}
 button{font:inherit;border:1px solid var(--line);background:none;color:var(--fg);border-radius:8px;padding:6px 12px;cursor:pointer}
 button.pri{background:var(--acc);border-color:var(--acc);color:#fff}button:hover{opacity:.85}
-#msg{min-height:24px;margin:12px 0;color:var(--mute)}.err{color:#c0392b}
+#msg{min-height:24px;margin:12px 0;color:var(--mute)}.err{color:var(--bad)}
 .note{border:1px dashed var(--acc);border-radius:12px;padding:12px 16px;margin-bottom:16px}
 .dot{width:12px;height:12px;border-radius:50%;flex:none;background:var(--line)}.lbl{font-size:12px;font-weight:600;color:var(--mute);margin-left:6px}
-.exp{color:#c0392b;font-size:12px;font-weight:600}.sw{display:inline-block;width:22px;height:22px;border-radius:50%;margin:4px;cursor:pointer;border:2px solid transparent}
+.exp{color:var(--bad);font-size:12px;font-weight:600}.sw{display:inline-block;width:22px;height:22px;border-radius:50%;margin:4px;cursor:pointer;border:2px solid transparent}
 .row{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
-@media(max-width:480px){.card{flex-wrap:wrap}}
+@media(max-width:480px){.card{flex-wrap:wrap}.grow{flex-basis:calc(100% - 24px)}}
 </style>
 <main>
 <h1>Claude Switcher</h1>

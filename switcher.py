@@ -16,7 +16,7 @@ import time
 from ctypes import wintypes
 from pathlib import Path
 
-__version__ = "1.3.0"
+__version__ = "1.3.1"
 
 HOME = Path.home()
 CRED = HOME / ".claude" / ".credentials.json"

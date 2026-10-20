@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Claude Switcher</title>
+<meta name="description" content="Simpan beberapa akun Claude Code di system tray Windows dan pindah akun tanpa login ulang. Gratis dan open source.">
+<meta property="og:title" content="Claude Switcher">
+<meta property="og:description" content="Pindah antar akun Claude Code dari system tray Windows tanpa login ulang. Gratis dan open source.">
+<meta property="og:image" content="https://mohammadraflyy.github.io/claude-switcher/screenshots/dashboard.png">
+<link rel="icon" href="assets/icon.ico">
+<style>
+:root{--bg:#faf9f5;--panel:#fff;--fg:#1f1e1d;--mute:#5f5e58;--line:#e5e3da;--acc:#b4532f;--acc-soft:#f6e6de;--code:#f0eee6}
+@media(prefers-color-scheme:dark){:root{--bg:#1f1e1d;--panel:#2b2a28;--fg:#f0eee6;--mute:#b0aea5;--line:#3d3b37;--acc:#d97757;--acc-soft:#3a2b25;--code:#34322f}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif}
+a{color:var(--acc)}
+code{background:var(--code);padding:1px 6px;border-radius:5px;font-size:.9em}
+.wrap{max-width:980px;margin:0 auto;padding:0 16px}
+header{display:flex;align-items:center;justify-content:space-between;padding:16px 0}
+.brand{display:flex;align-items:center;gap:10px;font-weight:700;text-decoration:none;color:var(--fg)}
+.brand img{width:28px;height:28px;border-radius:7px}
+nav{display:flex;align-items:center;gap:16px}
+nav a{color:var(--mute);text-decoration:none;font-size:14px}
+nav a:hover{color:var(--fg)}
+button.lang{font:inherit;font-size:13px;font-weight:600;border:1px solid var(--line);background:var(--panel);color:var(--fg);border-radius:8px;padding:4px 10px;cursor:pointer}
+.hero{text-align:center;padding:48px 0 32px}
+.hero h1{font-size:clamp(30px,6vw,46px);line-height:1.15;margin:0 0 16px}
+.hero p.lead{font-size:18px;color:var(--mute);max-width:640px;margin:0 auto 28px}
+.cta{display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
+.btn{display:inline-block;padding:12px 22px;border-radius:10px;font-weight:600;text-decoration:none;border:1px solid var(--line);color:var(--fg);background:var(--panel)}
+.btn.pri{background:var(--acc);border-color:var(--acc);color:#fff}
+.btn:hover{opacity:.9}
+.small{font-size:13px;color:var(--mute);margin-top:14px}
+.shot{margin:32px auto 0;max-width:760px}
+.shot img{display:block;width:100%;height:auto;border:1px solid var(--line);border-radius:14px}
+section{padding:56px 0}
+section.alt{background:var(--panel);border-block:1px solid var(--line)}
+h2{font-size:28px;line-height:1.25;margin:0 0 8px}
+.sub{color:var(--mute);margin:0 0 28px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px}
+section.alt .card{background:var(--bg)}
+.card h3{margin:0 0 6px;font-size:17px}
+.card p{margin:0;color:var(--mute);font-size:15px}
+ol.steps{list-style:none;counter-reset:s;margin:0;padding:0;display:grid;gap:14px}
+ol.steps li{counter-increment:s;display:flex;gap:14px;align-items:flex-start}
+ol.steps li::before{content:counter(s);flex:none;width:30px;height:30px;border-radius:50%;background:var(--acc-soft);color:var(--acc);font-weight:700;display:grid;place-items:center}
+ol.steps b{display:block}
+ol.steps span{color:var(--mute)}
+ul.plain{margin:0;padding-left:20px;color:var(--mute)}
+ul.plain li{margin:6px 0}
+details{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 18px;margin-bottom:10px}
+summary{cursor:pointer;font-weight:600}
+details p{margin:10px 0 0;color:var(--mute)}
+footer{padding:32px 0 48px;color:var(--mute);font-size:14px;text-align:center}
+footer a{color:var(--mute)}
+@media(max-width:520px){nav a.hide{display:none}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <a class="brand" href="#"><img src="assets/icon.ico" alt="" width="28" height="28">Claude Switcher</a>
+    <nav>
+      <a class="hide" href="#fitur" data-en="Features">Fitur</a>
+      <a class="hide" href="#cara" data-en="How to use">Cara pakai</a>
+      <a class="hide" href="#aman" data-en="Privacy">Privasi</a>
+      <a href="https://github.com/mohammadraflyy/claude-switcher">GitHub</a>
+      <button class="lang" id="lang" type="button" aria-label="Switch language">EN</button>
+    </nav>
+  </header>
+
+  <div class="hero">
+    <h1 data-en="Switch Claude Code accounts without logging in again">Ganti akun Claude Code tanpa login ulang</h1>
+    <p class="lead" data-en="Keep several Claude Code logins in the Windows system tray and switch with one click. Free, open source, and everything stays on your PC.">Simpan beberapa akun Claude Code di system tray Windows dan pindah dengan satu klik. Gratis, open source, dan semua data tetap di PC kamu.</p>
+    <div class="cta">
+      <a class="btn pri" id="dl" href="https://github.com/mohammadraflyy/claude-switcher/releases/latest" data-en="Download for Windows">Unduh untuk Windows</a>
+      <a class="btn" href="https://github.com/mohammadraflyy/claude-switcher" data-en="View on GitHub">Lihat di GitHub</a>
+    </div>
+    <p class="small"><span data-en="Windows 10/11 · no admin rights needed">Windows 10/11 · tanpa hak admin</span><span id="ver"></span></p>
+    <div class="shot">
+      <img src="screenshots/dashboard.png" width="950" height="802" alt="Dashboard Claude Switcher dengan tiga akun: satu aktif, satu siap dipakai, satu login kedaluwarsa" fetchpriority="high">
+    </div>
+  </div>
+</div>
+
+<section id="fitur">
+  <div class="wrap">
+    <h2 data-en="Everything you need to juggle accounts">Semua yang dibutuhkan untuk berganti akun</h2>
+    <p class="sub" data-en="Built for people with a personal and a work account, or more than one workspace.">Dibuat untuk yang punya akun pribadi dan akun kerja, atau lebih dari satu workspace.</p>
+    <div class="grid">
+      <div class="card"><h3 data-en="One-click switch">Ganti sekali klik</h3><p data-en="Pick an account in the tray or dashboard, or press Ctrl+Alt+Shift+S to jump to the next one.">Pilih akun di tray atau dashboard, atau tekan Ctrl+Alt+Shift+S untuk lompat ke akun berikutnya.</p></div>
+      <div class="card"><h3 data-en="Encrypted logins">Login terenkripsi</h3><p data-en="Saved logins are encrypted with Windows DPAPI. Only your Windows user can open them.">Login tersimpan dienkripsi dengan Windows DPAPI. Hanya user Windows-mu yang bisa membukanya.</p></div>
+      <div class="card"><h3 data-en="Automatic token sync">Sinkron token otomatis</h3><p data-en="Claude Code rotates tokens while it runs. The saved copy is refreshed every 30 seconds so a switch never restores a stale login.">Claude Code memutar token saat berjalan. Salinan tersimpan diperbarui tiap 30 detik, jadi ganti akun tidak pernah memulihkan login yang basi.</p></div>
+      <div class="card"><h3 data-en="Running-session warning">Peringatan sesi berjalan</h3><p data-en="The dashboard counts the claude sessions still open and asks before you switch.">Dashboard menghitung sesi claude yang masih terbuka dan bertanya dulu sebelum kamu ganti.</p></div>
+      <div class="card"><h3 data-en="Labels, colors, expiry">Label, warna, kedaluwarsa</h3><p data-en="Name accounts like “Work” or “Personal”. Accounts whose login has expired are marked and skipped.">Beri nama seperti “Kerja” atau “Pribadi”. Akun yang loginnya sudah kedaluwarsa ditandai dan dilewati.</p></div>
+      <div class="card"><h3 data-en="Backup and restore">Backup dan restore</h3><p data-en="Download your saved accounts, still encrypted, and restore them later for the same Windows user.">Unduh akun tersimpan, tetap terenkripsi, lalu pulihkan nanti untuk user Windows yang sama.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="cara" class="alt">
+  <div class="wrap">
+    <h2 data-en="Up and running in minutes">Siap dipakai dalam beberapa menit</h2>
+    <p class="sub" data-en="You still log in the normal way; Claude Switcher just remembers each login.">Kamu tetap login dengan cara biasa; Claude Switcher hanya mengingat setiap login.</p>
+    <ol class="steps">
+      <li><div><b data-en="Download and install">Unduh dan pasang</b><span data-en="Run the installer; no admin rights needed. Windows SmartScreen may warn because the installer is not code-signed: choose More info, then Run anyway.">Jalankan installer; tanpa hak admin. Windows SmartScreen mungkin memperingatkan karena installer belum ditandatangani: pilih More info, lalu Run anyway.</span></div></li>
+      <li><div><b data-en="Save your first account">Simpan akun pertama</b><span data-en="Log in with <code>claude /login</code>, then click the tray icon and press Save current login.">Login dengan <code>claude /login</code>, lalu klik ikon tray dan tekan Save current login.</span></div></li>
+      <li><div><b data-en="Add another account">Tambah akun lain</b><span data-en="Run <code>claude /login</code> with your other account and save it too.">Jalankan <code>claude /login</code> dengan akun lainmu dan simpan juga.</span></div></li>
+      <li><div><b data-en="Switch">Ganti akun</b><span data-en="Pick an account. New <code>claude</code> sessions use it; sessions that are already running keep the account they started with.">Pilih akun. Sesi <code>claude</code> baru memakainya; sesi yang sudah berjalan tetap di akun lamanya.</span></div></li>
+    </ol>
+  </div>
+</section>
+
+<section id="aman">
+  <div class="wrap">
+    <h2 data-en="Stays on your PC">Tetap di PC kamu</h2>
+    <p class="sub" data-en="Claude Switcher swaps two entries in the files Claude Code already uses. Nothing is uploaded.">Claude Switcher menukar dua entri di file yang sudah dipakai Claude Code. Tidak ada yang diunggah.</p>
+    <ul class="plain">
+      <li data-en="Logins are encrypted with Windows DPAPI in <code>%APPDATA%\ClaudeSwitcher</code>.">Login dienkripsi dengan Windows DPAPI di <code>%APPDATA%\ClaudeSwitcher</code>.</li>
+      <li data-en="The dashboard listens on <code>127.0.0.1</code> only, never sends tokens to the page, and rejects requests from other websites.">Dashboard hanya mendengarkan di <code>127.0.0.1</code>, tidak pernah mengirim token ke halaman, dan menolak permintaan dari situs lain.</li>
+      <li data-en="Every write is atomic and keeps a <code>.bak</code> of the previous file.">Setiap penulisan atomik dan menyisakan <code>.bak</code> dari file sebelumnya.</li>
+      <li data-en="The only network request is an update check against GitHub every 6 hours (anonymous, can be turned off in the tray menu).">Satu-satunya permintaan jaringan adalah cek update ke GitHub tiap 6 jam (anonim, bisa dimatikan di menu tray).</li>
+      <li data-en="Open source under the MIT license, so you can read exactly what it does.">Open source berlisensi MIT, jadi kamu bisa membaca persis apa yang dilakukannya.</li>
+    </ul>
+  </div>
+</section>
+
+<section class="alt">
+  <div class="wrap">
+    <h2 data-en="Good to know" style="margin-bottom:20px">Perlu diketahui</h2>
+    <details><summary data-en="Is it okay to use with my accounts?">Apakah boleh dipakai dengan akunku?</summary><p data-en="Only with accounts that belong to you. Rotating accounts to get around usage limits, or sharing one login with other people, goes against Anthropic's terms and can get an account banned. This is an unofficial tool and is not affiliated with Anthropic.">Hanya untuk akun milikmu sendiri. Memutar banyak akun untuk menghindari batas pemakaian, atau berbagi satu login dengan orang lain, melanggar ketentuan Anthropic dan bisa membuat akun diblokir. Ini alat tidak resmi dan tidak berafiliasi dengan Anthropic.</p></details>
+    <details><summary data-en="Why do running claude sessions not switch?">Kenapa sesi claude yang sedang berjalan tidak ikut ganti?</summary><p data-en="A running session holds its login in memory. Open a new session after switching; the dashboard tells you how many are still running.">Sesi yang berjalan menyimpan loginnya di memori. Buka sesi baru setelah ganti akun; dashboard memberi tahu berapa sesi yang masih berjalan.</p></details>
+    <details><summary data-en="What if a Claude Code update changes how it stores logins?">Bagaimana kalau update Claude Code mengubah cara menyimpan login?</summary><p data-en="Claude Switcher depends on where Claude Code keeps its login today (<code>~/.claude/.credentials.json</code> and <code>~/.claude.json</code>). An update could change that. Your original files are backed up with a <code>.bak</code> on every write.">Claude Switcher bergantung pada tempat Claude Code menyimpan login saat ini (<code>~/.claude/.credentials.json</code> dan <code>~/.claude.json</code>). Update bisa mengubahnya. File aslimu dicadangkan sebagai <code>.bak</code> setiap kali ditulis.</p></details>
+    <details><summary data-en="Does it work on macOS or Linux?">Apakah jalan di macOS atau Linux?</summary><p data-en="No, Windows only for now.">Belum, saat ini hanya Windows.</p></details>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <p><a href="https://github.com/mohammadraflyy/claude-switcher">GitHub</a> · <a href="https://github.com/mohammadraflyy/claude-switcher/releases">Releases</a> · <a href="https://github.com/mohammadraflyy/claude-switcher/issues">Issues</a> · MIT</p>
+    <p data-en="Unofficial tool, not affiliated with or endorsed by Anthropic.">Alat tidak resmi, tidak berafiliasi dengan atau didukung oleh Anthropic.</p>
+  </div>
+</footer>
+
+<script>
+(function(){
+  var btn=document.getElementById('lang');
+  function set(l){
+    document.documentElement.lang=l;
+    document.querySelectorAll('[data-en]').forEach(function(e){
+      if(e.dataset.id===undefined)e.dataset.id=e.innerHTML;
+      e.innerHTML=l==='en'?e.dataset.en:e.dataset.id;
+    });
+    btn.textContent=l==='en'?'ID':'EN';
+    try{localStorage.setItem('lang',l)}catch(e){}
+  }
+  var saved=null;try{saved=localStorage.getItem('lang')}catch(e){}
+  var start=saved||((navigator.language||'').toLowerCase().indexOf('id')===0?'id':'en');
+  if(start==='en')set('en');
+  btn.onclick=function(){set(document.documentElement.lang==='en'?'id':'en')};
+
+  // Show the current version and link straight to the installer; the static link keeps working if this fails.
+  fetch('https://api.github.com/repos/mohammadraflyy/claude-switcher/releases/latest',{headers:{Accept:'application/vnd.github+json'}})
+    .then(function(r){return r.ok?r.json():null}).then(function(d){
+      if(!d)return;
+      document.getElementById('ver').textContent=' · '+d.tag_name;
+      var a=(d.assets||[]).filter(function(x){return /\.exe$/.test(x.name)})[0];
+      if(a&&a.browser_download_url.indexOf('https://github.com/mohammadraflyy/claude-switcher/releases/download/')===0)
+        document.getElementById('dl').href=a.browser_download_url;
+    }).catch(function(){});
+})();
+</script>
+</body>
+</html>
