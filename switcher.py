@@ -9,16 +9,20 @@ import base64
 import ctypes
 import json
 import os
+import subprocess
 import sys
+import threading
+import time
 from ctypes import wintypes
 from pathlib import Path
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 
 HOME = Path.home()
 CRED = HOME / ".claude" / ".credentials.json"
 IDENT = HOME / ".claude.json"
 STORE = Path(os.environ.get("APPDATA") or HOME) / "ClaudeSwitcher" / "accounts.json"
+_LOCK = threading.RLock()  # tray thread, sync thread and dashboard threads all touch the same files
 
 
 class _Blob(ctypes.Structure):
@@ -78,12 +82,13 @@ def _open(blob):
 
 def save_current():
     """Store/refresh the snapshot of the currently logged-in account. Returns its email."""
-    snap = _snapshot()
-    store = _store()
-    uid = snap["account"]["accountUuid"]
-    store[uid] = {"email": snap["account"].get("emailAddress", uid), "blob": _seal(snap)}
-    _write(STORE, store)
-    return store[uid]["email"]
+    with _LOCK:
+        snap = _snapshot()
+        store = _store()
+        uid = snap["account"]["accountUuid"]
+        store[uid] = {"email": snap["account"].get("emailAddress", uid), "blob": _seal(snap)}
+        _write(STORE, store)
+        return store[uid]["email"]
 
 
 def accounts():
@@ -116,27 +121,65 @@ def details():
 
 def switch(uid):
     """Sync-back the active account (its refresh token may have rotated), then load `uid`."""
-    store = _store()
-    if uid not in store:
-        raise KeyError(uid)
-    if current() == uid:
-        return
-    if current() in store:
-        save_current()
+    with _LOCK:
         store = _store()
-    snap = _open(store[uid]["blob"])
-    cred = _read(CRED)  # keep mcpOAuth untouched
-    cred["claudeAiOauth"] = snap["oauth"]
-    ident = _read(IDENT)
-    ident["oauthAccount"] = snap["account"]
-    _write(CRED, cred)
-    _write(IDENT, ident)
+        if uid not in store:
+            raise KeyError(uid)
+        if current() == uid:
+            return
+        if current() in store:
+            save_current()
+            store = _store()
+        snap = _open(store[uid]["blob"])
+        cred = _read(CRED)  # keep mcpOAuth untouched
+        cred["claudeAiOauth"] = snap["oauth"]
+        ident = _read(IDENT)
+        ident["oauthAccount"] = snap["account"]
+        _write(CRED, cred)
+        _write(IDENT, ident)
 
 
 def remove(uid):
-    store = _store()
-    store.pop(uid, None)
-    _write(STORE, store)
+    with _LOCK:
+        store = _store()
+        store.pop(uid, None)
+        _write(STORE, store)
+
+
+def sync_active(settle=2.0):
+    """Copy the live login back into the active account's slot when its tokens changed
+    (Claude Code rotates them). True if the slot was updated.
+
+    The live login spans two files, so a /login or a switch caught half-written would look like a
+    change; the snapshot must stay identical across `settle` seconds before it is trusted."""
+    try:
+        cur = current()
+        if cur not in _store():
+            return False
+        first = _snapshot()
+        time.sleep(settle)
+        with _LOCK:
+            now = _snapshot()
+            if current() != cur or now != first or now["account"]["accountUuid"] != cur:
+                return False
+            if _open(_store()[cur]["blob"])["oauth"] == now["oauth"]:
+                return False
+            save_current()
+            return True
+    except (OSError, ValueError, KeyError):
+        return False
+
+
+def running_sessions():
+    """Number of running `claude.exe` processes (native install). npm installs run as node.exe and are not counted."""
+    try:
+        out = subprocess.run(
+            ["tasklist", "/FI", "IMAGENAME eq claude.exe", "/FO", "CSV", "/NH"],
+            capture_output=True, text=True, timeout=10, creationflags=0x08000000,  # CREATE_NO_WINDOW
+        ).stdout
+    except (OSError, subprocess.SubprocessError):
+        return 0
+    return sum(1 for line in out.splitlines() if line.lower().startswith('"claude.exe"'))
 
 
 def main(argv):

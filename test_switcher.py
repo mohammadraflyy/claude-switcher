@@ -50,6 +50,45 @@ class SwitchTest(unittest.TestCase):
         self.assertNotIn("tok1", switcher.STORE.read_text())
 
 
+class SyncTest(SwitchTest):
+    def saved_token(self, uid):
+        return switcher._open(switcher._store()[uid]["blob"])["oauth"]["accessToken"]
+
+    def test_rotated_token_is_synced_to_active_slot(self):
+        switcher.save_current()
+        self.assertFalse(switcher.sync_active(settle=0))  # nothing changed yet
+        self.login(1, "tok1-rotated")                      # claude refreshed the token
+        self.assertTrue(switcher.sync_active(settle=0))
+        self.assertEqual(self.saved_token("u1"), "tok1-rotated")
+        self.assertFalse(switcher.sync_active(settle=0))  # already in sync
+
+    def test_unsaved_account_is_never_stored_by_sync(self):
+        self.assertFalse(switcher.sync_active(settle=0))
+        self.assertEqual(switcher.accounts(), [])
+
+    def test_half_written_login_is_ignored(self):
+        switcher.save_current()
+        orig = switcher._snapshot
+        calls = []
+
+        def flapping():  # first read sees a login mid-switch, second read sees it settled
+            calls.append(1)
+            s = orig()
+            if len(calls) == 1:
+                s["oauth"] = {"accessToken": "someone-elses"}
+            return s
+
+        switcher._snapshot = flapping
+        self.addCleanup(setattr, switcher, "_snapshot", orig)
+        self.assertFalse(switcher.sync_active(settle=0))
+        self.assertEqual(self.saved_token("u1"), "tok1")
+
+    def test_running_sessions_is_a_count(self):
+        n = switcher.running_sessions()
+        self.assertIsInstance(n, int)
+        self.assertGreaterEqual(n, 0)
+
+
 class DashboardTest(SwitchTest):
     def setUp(self):
         super().setUp()

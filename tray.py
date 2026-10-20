@@ -2,6 +2,8 @@
 
 import ctypes
 import sys
+import threading
+import time
 import webbrowser
 
 import pystray
@@ -50,7 +52,8 @@ def _menu(url):
         def run(icon, item):
             try:
                 switcher.switch(uid)
-                icon.notify("New `claude` sessions use this account.", email)
+                n = switcher.running_sessions()
+                icon.notify("New sessions use this account." + (f" {n} running claude session(s) keep their old one." if n else ""), email)
             except Exception as e:  # tray must survive a bad file
                 icon.notify(str(e), "Switch failed")
             icon.update_menu()
@@ -88,9 +91,17 @@ def _single_instance():
     return ctypes.windll.kernel32.GetLastError() != 183  # ERROR_ALREADY_EXISTS
 
 
+def _sync_loop(every=30):
+    """Keep the active account's saved copy fresh: Claude Code rotates tokens while it runs."""
+    while True:
+        time.sleep(every)
+        switcher.sync_active()
+
+
 def main():
     if not _single_instance():
         return
+    threading.Thread(target=_sync_loop, daemon=True).start()
     _, url = dashboard.start()
     if not switcher.accounts():
         webbrowser.open(url)  # first run: show where to start

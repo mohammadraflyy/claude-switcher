@@ -28,11 +28,11 @@ button.pri{background:var(--acc);border-color:var(--acc);color:#fff}button:hover
 <main>
 <h1>Claude Switcher</h1>
 <p class=sub>Saved accounts. New <code>claude</code> sessions use the active one; running sessions keep theirs.</p>
-<div id=note></div><div id=list></div><div id=msg></div>
+<div id=warn></div><div id=note></div><div id=list></div><div id=msg></div>
 <p class=meta>Log in to another account with <code>claude /login</code>, then press <b>Save current login</b>. Use only your own accounts.</p>
 </main>
 <script>
-const $=id=>document.getElementById(id);
+const $=id=>document.getElementById(id);let sessions=0;
 const el=(t,c,x)=>{const e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e};
 const say=(t,bad)=>{$('msg').textContent=t;$('msg').className=bad?'err':''};
 async function post(path,body){
@@ -41,6 +41,9 @@ async function post(path,body){
 async function act(path,body,ok){try{await post(path,body);say(ok);}catch(e){say(e.message,1)}load()}
 async function load(){
   const j=await (await fetch('/api/accounts')).json();
+  sessions=j.sessions;
+  $('warn').replaceChildren();
+  if(sessions)$('warn').append(el('div','note',sessions+' claude session'+(sessions>1?'s are':' is')+' running. Sessions keep the account they started with; open a new session after switching.'));
   $('note').replaceChildren();
   if(j.unsaved){const n=el('div','note');n.append(el('div','',j.unsaved+' is logged in but not saved yet. '));
     const b=el('button','pri','Save current login');b.onclick=()=>act('/api/save',0,'Saved.');n.append(b);$('note').append(n)}
@@ -50,7 +53,9 @@ async function load(){
     g.append(el('div','meta',[a.name,a.org,a.plan].filter(Boolean).join(' · ')));
     c.append(g);
     if(a.active)c.append(el('span','badge','ACTIVE'));
-    else{const s=el('button','pri','Switch');s.onclick=()=>act('/api/switch',{uuid:a.uuid},'Switched to '+a.email+'. Start a new claude session.');c.append(s)}
+    else{const s=el('button','pri','Switch');s.onclick=()=>{
+      if(sessions&&!confirm(sessions+' running claude session(s) will keep their current account. Switch anyway?'))return;
+      act('/api/switch',{uuid:a.uuid},'Switched to '+a.email+'. Start a new claude session.')};c.append(s)}
     const d=el('button','','Remove');d.onclick=()=>{if(confirm('Remove '+a.email+' from the switcher? You stay logged in if active.'))act('/api/remove',{uuid:a.uuid},'Removed.')};
     c.append(d);return c}));
   if(!j.accounts.length&&!j.unsaved)$('list').append(el('p','meta','No accounts yet. Run claude /login first.'))}
@@ -86,7 +91,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, PAGE.encode(), "text/html")
         if self.path == "/api/accounts":
             accounts, unsaved = switcher.details()
-            return self._send(200, {"accounts": accounts, "unsaved": unsaved})
+            return self._send(200, {"accounts": accounts, "unsaved": unsaved, "sessions": switcher.running_sessions()})
         self._send(404, {"error": "not found"})
 
     def do_POST(self):
