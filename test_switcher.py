@@ -18,9 +18,9 @@ class SwitchTest(unittest.TestCase):
         switcher.STORE = d / "store" / "accounts.json"
         self.login(1, "tok1")
 
-    def login(self, n, tok):
+    def login(self, n, tok, **oauth):
         cred = json.loads(switcher.CRED.read_text()) if switcher.CRED.exists() else {"mcpOAuth": {"k": 1}}
-        cred["claudeAiOauth"] = {"accessToken": tok}
+        cred["claudeAiOauth"] = {"accessToken": tok, **oauth}
         switcher.CRED.write_text(json.dumps(cred))
         switcher.IDENT.write_text(json.dumps({"oauthAccount": acct(n), "other": "keep"}))
 
@@ -89,6 +89,63 @@ class SyncTest(SwitchTest):
         self.assertGreaterEqual(n, 0)
 
 
+class FeatureTest(SwitchTest):
+    def setUp(self):
+        super().setUp()
+        switcher.save_current()                    # u1
+        self.login(2, "tok2")
+        switcher.save_current()                    # u2
+        self.login(3, "tok3", refreshTokenExpiresAt=1)
+        switcher.save_current()                    # u3, refresh token long dead
+        switcher.switch("u1")
+
+    def by_uuid(self):
+        return {a["uuid"]: a for a in switcher.details()[0]}
+
+    def test_expired_flag(self):
+        d = self.by_uuid()
+        self.assertTrue(d["u3"]["expired"])
+        self.assertFalse(d["u1"]["expired"] or d["u2"]["expired"])
+
+    def test_next_skips_expired_and_wraps(self):
+        self.assertEqual(switcher.next_account(), "a2@x.test")
+        self.assertEqual(switcher.current(), "u2")
+        self.assertEqual(switcher.next_account(), "a1@x.test")  # u3 is expired: skipped, wraps to u1
+        self.assertEqual(switcher.current(), "u1")
+
+    def test_next_with_nothing_to_go_to(self):
+        switcher.remove("u2")
+        self.assertIsNone(switcher.next_account())
+        self.assertEqual(switcher.current(), "u1")
+
+    def test_label_survives_resave_and_is_validated(self):
+        switcher.set_label("u1", "W" * 40, "#3b82f6")
+        self.assertEqual(self.by_uuid()["u1"]["label"], "W" * 24)
+        self.login(1, "tok1b")
+        switcher.save_current()
+        self.assertEqual(self.by_uuid()["u1"]["color"], "#3b82f6")
+        with self.assertRaises(ValueError):
+            switcher.set_label("u1", "x", "red; background:url(x)")
+        with self.assertRaises(KeyError):
+            switcher.set_label("nope", "x")
+
+    def test_backup_roundtrip(self):
+        data = switcher.export_store()
+        self.assertNotIn("tok", json.dumps(data))
+        switcher.remove("u2")
+        self.assertEqual(switcher.import_store(data), 3)
+        self.assertIn("u2", self.by_uuid())
+
+    def test_bad_backups_import_nothing(self):
+        before = switcher.STORE.read_text()
+        data = switcher.export_store()
+        data["accounts"]["u1"]["blob"] = "AAAA"
+        for bad in (data, {}, {"accounts": []}, {"accounts": {"x": {"email": "e"}}}, "junk"):
+            with self.assertRaises(ValueError):
+                switcher.import_store(bad)
+        self.assertEqual(switcher.STORE.read_text(), before)
+
+
 class DashboardTest(SwitchTest):
     def setUp(self):
         super().setUp()
@@ -116,6 +173,21 @@ class DashboardTest(SwitchTest):
         self.assertEqual(len(json.loads(text)["accounts"]), 2)
         self.assertEqual(self.call("POST", "/api/switch", {"uuid": "u1"})[0], 200)
         self.assertEqual(switcher.current(), "u1")
+
+    def test_label_backup_restore_endpoints(self):
+        switcher.save_current()
+        self.assertEqual(self.call("POST", "/api/label", {"uuid": "u1", "label": "Work", "color": "#d97757"})[0], 200)
+        self.assertEqual(self.call("POST", "/api/label", {"uuid": "u1", "color": "javascript:1"})[0], 400)
+        status, text = self.call("GET", "/api/backup")
+        self.assertEqual(status, 200)
+        backup = json.loads(text)
+        self.assertEqual(backup["accounts"]["u1"]["label"], "Work")
+        self.assertNotIn("tok", text)
+        self.call("POST", "/api/remove", {"uuid": "u1"})
+        self.assertEqual(self.call("POST", "/api/restore", backup)[0], 200)
+        self.assertEqual(len(switcher.accounts()), 1)
+        self.assertEqual(self.call("POST", "/api/restore", {"accounts": {"u9": {"email": "e", "blob": "AAAA"}}})[0], 400)
+        self.assertEqual(self.call("POST", "/api/restore", backup, {"Origin": "http://evil.test"})[0], 403)
 
     def test_cross_site_and_rebinding_blocked(self):
         switcher.save_current()

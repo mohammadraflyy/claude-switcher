@@ -16,7 +16,7 @@ import time
 from ctypes import wintypes
 from pathlib import Path
 
-__version__ = "1.1.0"
+__version__ = "1.2.0"
 
 HOME = Path.home()
 CRED = HOME / ".claude" / ".credentials.json"
@@ -86,9 +86,18 @@ def save_current():
         snap = _snapshot()
         store = _store()
         uid = snap["account"]["accountUuid"]
-        store[uid] = {"email": snap["account"].get("emailAddress", uid), "blob": _seal(snap)}
+        store[uid] = {**store.get(uid, {}), "email": snap["account"].get("emailAddress", uid), "blob": _seal(snap)}  # keeps label/color
         _write(STORE, store)
         return store[uid]["email"]
+
+
+COLORS = ("#d97757", "#2e7d4f", "#3b82f6", "#a855f7", "#e5a50a", "#e11d48")
+
+
+def _expired(oauth):
+    """True when the refresh token is dead, so only `claude /login` can revive the account."""
+    t = oauth.get("refreshTokenExpiresAt")
+    return bool(t) and t < time.time() * 1000
 
 
 def accounts():
@@ -109,6 +118,7 @@ def details():
         out.append({
             "uuid": uid, "email": v["email"], "name": a.get("displayName") or a.get("fullName", ""),
             "org": a.get("organizationName", ""), "plan": o.get("subscriptionType", ""), "active": uid == cur,
+            "label": v.get("label", ""), "color": v.get("color", ""), "expired": _expired(o),
         })
     unsaved = None
     if cur and cur not in _store():
@@ -144,6 +154,51 @@ def remove(uid):
         store = _store()
         store.pop(uid, None)
         _write(STORE, store)
+
+
+def next_account():
+    """Switch to the next saved account that is not expired (wraps around). Returns its email, or None."""
+    with _LOCK:
+        accts, _ = details()
+        i = next((n for n, a in enumerate(accts) if a["active"]), -1)
+        for a in accts[i + 1:] + accts[:i + 1]:
+            if not a["expired"] and not a["active"]:
+                switch(a["uuid"])
+                return a["email"]
+    return None
+
+
+def set_label(uid, label="", color=""):
+    label = str(label).strip()[:24]
+    if color not in ("",) + COLORS:
+        raise ValueError("unknown color")
+    with _LOCK:
+        store = _store()
+        if uid not in store:
+            raise KeyError(uid)
+        store[uid]["label"], store[uid]["color"] = label, color
+        _write(STORE, store)
+
+
+def export_store():
+    """Backup data: the saved accounts as stored (tokens stay DPAPI-encrypted, restorable by the same Windows user only)."""
+    return {"version": 1, "accounts": _store()}
+
+
+def import_store(data):
+    """Merge a backup into the store. Every entry must decrypt, otherwise nothing is imported. Returns the count."""
+    try:
+        items = data["accounts"]
+        for v in items.values():
+            snap = _open(v["blob"])
+            snap["oauth"], snap["account"]["accountUuid"], str(v["email"])
+    except (KeyError, TypeError, AttributeError, ValueError, OSError):
+        raise ValueError("not a valid backup for this Windows user")
+    with _LOCK:
+        store = _store()
+        store.update({u: {k: v[k] for k in ("email", "blob", "label", "color") if k in v} for u, v in items.items()})
+        _write(STORE, store)
+    return len(items)
 
 
 def sync_active(settle=2.0):
@@ -189,6 +244,8 @@ def main(argv):
     elif cmd == "list":
         for u, e, a in accounts():
             print("*" if a else " ", e, u)
+    elif cmd == "next":
+        print("switched to", next_account() or "nothing (no other usable account)")
     elif cmd == "switch" and len(argv) > 2:
         m = [u for u, e, _ in accounts() if argv[2] in (u, e)]
         if not m:
@@ -196,7 +253,7 @@ def main(argv):
         switch(m[0])
         print("switched; start a new `claude` session")
     else:
-        sys.exit("usage: switcher.py add | list | switch <email|uuid>")
+        sys.exit("usage: switcher.py add | list | next | switch <email|uuid>")
 
 
 if __name__ == "__main__":

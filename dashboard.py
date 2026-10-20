@@ -23,13 +23,18 @@ button{font:inherit;border:1px solid var(--line);background:none;color:var(--fg)
 button.pri{background:var(--acc);border-color:var(--acc);color:#fff}button:hover{opacity:.85}
 #msg{min-height:24px;margin:12px 0;color:var(--mute)}.err{color:#c0392b}
 .note{border:1px dashed var(--acc);border-radius:12px;padding:12px 16px;margin-bottom:16px}
+.dot{width:12px;height:12px;border-radius:50%;flex:none;background:var(--line)}.lbl{font-size:12px;font-weight:600;color:var(--mute);margin-left:6px}
+.exp{color:#c0392b;font-size:12px;font-weight:600}.sw{display:inline-block;width:22px;height:22px;border-radius:50%;margin:4px;cursor:pointer;border:2px solid transparent}
+.row{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
 @media(max-width:480px){.card{flex-wrap:wrap}}
 </style>
 <main>
 <h1>Claude Switcher</h1>
 <p class=sub>Saved accounts. New <code>claude</code> sessions use the active one; running sessions keep theirs.</p>
 <div id=warn></div><div id=note></div><div id=list></div><div id=msg></div>
-<p class=meta>Log in to another account with <code>claude /login</code>, then press <b>Save current login</b>. Use only your own accounts.</p>
+<div class=row><a href=/api/backup download><button>Backup</button></a>
+<button id=restore>Restore…</button><input id=file type=file accept=.json hidden></div>
+<p class=meta>Backups stay encrypted and restore only on this Windows user. Log in to another account with <code>claude /login</code>, then press <b>Save current login</b>. Use only your own accounts.</p>
 </main>
 <script>
 const $=id=>document.getElementById(id);let sessions=0;
@@ -49,16 +54,28 @@ async function load(){
     const b=el('button','pri','Save current login');b.onclick=()=>act('/api/save',0,'Saved.');n.append(b);$('note').append(n)}
   $('list').replaceChildren(...j.accounts.map(a=>{
     const c=el('div','card'+(a.active?' active':'')),g=el('div','grow');
-    g.append(el('div','mail',a.email));
+    const dot=el('span','dot');if(a.color)dot.style.background=a.color;c.append(dot);
+    const m=el('div','mail',a.email);if(a.label)m.append(el('span','lbl',a.label));g.append(m);
+    if(a.expired)g.append(el('div','exp','Login expired. Run claude /login, then Save current login.'));
     g.append(el('div','meta',[a.name,a.org,a.plan].filter(Boolean).join(' · ')));
     c.append(g);
     if(a.active)c.append(el('span','badge','ACTIVE'));
-    else{const s=el('button','pri','Switch');s.onclick=()=>{
+    else if(!a.expired){const s=el('button','pri','Switch');s.onclick=()=>{
       if(sessions&&!confirm(sessions+' running claude session(s) will keep their current account. Switch anyway?'))return;
       act('/api/switch',{uuid:a.uuid},'Switched to '+a.email+'. Start a new claude session.')};c.append(s)}
+    const t=el('button','','Label');t.onclick=()=>editLabel(a,j.colors);c.append(t);
     const d=el('button','','Remove');d.onclick=()=>{if(confirm('Remove '+a.email+' from the switcher? You stay logged in if active.'))act('/api/remove',{uuid:a.uuid},'Removed.')};
     c.append(d);return c}));
   if(!j.accounts.length&&!j.unsaved)$('list').append(el('p','meta','No accounts yet. Run claude /login first.'))}
+function editLabel(a,colors){
+  const l=prompt('Label for '+a.email+' (max 24 chars, empty to clear)',a.label);if(l===null)return;
+  const names=['orange','green','blue','purple','yellow','red'];
+  const pick=prompt('Color: '+names.map((n,i)=>(i+1)+' '+n).join(', ')+' (empty = none)',a.color?colors.indexOf(a.color)+1:'');if(pick===null)return;
+  const color=colors[parseInt(pick,10)-1]||'';
+  act('/api/label',{uuid:a.uuid,label:l,color},'Label saved.')}
+$('restore').onclick=()=>$('file').click();
+$('file').onchange=async e=>{const f=e.target.files[0];e.target.value='';if(!f)return;
+  try{const r=await post('/api/restore',JSON.parse(await f.text()));say('Restored '+r.count+' account(s).')}catch(x){say(x.message,1)}load()};
 load();setInterval(load,5000);
 </script>
 """
@@ -91,7 +108,16 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, PAGE.encode(), "text/html")
         if self.path == "/api/accounts":
             accounts, unsaved = switcher.details()
-            return self._send(200, {"accounts": accounts, "unsaved": unsaved, "sessions": switcher.running_sessions()})
+            return self._send(200, {"accounts": accounts, "unsaved": unsaved, "sessions": switcher.running_sessions(),
+                                    "colors": switcher.COLORS})
+        if self.path == "/api/backup":
+            data = json.dumps(switcher.export_store(), indent=2).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Disposition", 'attachment; filename="claude-switcher-backup.json"')
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            return self.wfile.write(data)
         self._send(404, {"error": "not found"})
 
     def do_POST(self):
@@ -105,6 +131,10 @@ class Handler(BaseHTTPRequestHandler):
                 switcher.switch(body["uuid"])
             elif self.path == "/api/remove":
                 switcher.remove(body["uuid"])
+            elif self.path == "/api/label":
+                switcher.set_label(body["uuid"], body.get("label", ""), body.get("color", ""))
+            elif self.path == "/api/restore":
+                return self._send(200, {"ok": True, "count": switcher.import_store(body)})
             else:
                 return self._send(404, {"error": "not found"})
         except Exception as e:

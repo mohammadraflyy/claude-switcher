@@ -5,6 +5,7 @@ import sys
 import threading
 import time
 import webbrowser
+from ctypes import wintypes
 
 import pystray
 from PIL import Image, ImageDraw
@@ -47,6 +48,32 @@ def _icon():
     return img
 
 
+HOTKEY_TEXT = "Ctrl+Alt+Shift+S"
+
+
+def next_account(icon, item=None):
+    try:
+        email = switcher.next_account()
+        if not email:
+            return icon.notify("No other usable account saved.", "Claude Switcher")
+        n = switcher.running_sessions()
+        icon.notify("New sessions use this account." + (f" {n} running claude session(s) keep their old one." if n else ""), email)
+    except Exception as e:
+        icon.notify(str(e), "Switch failed")
+    icon.update_menu()
+
+
+def _hotkey_loop(icon):
+    """Global hotkey -> next account. Skipped silently if another app already owns the combination."""
+    user32 = ctypes.windll.user32
+    if not user32.RegisterHotKey(None, 1, 0x0001 | 0x0002 | 0x0004 | 0x4000, ord("S")):  # ALT|CTRL|SHIFT|NOREPEAT
+        return
+    msg = wintypes.MSG()
+    while user32.GetMessageW(ctypes.byref(msg), None, 0, 0) > 0:
+        if msg.message == 0x0312:  # WM_HOTKEY
+            next_account(icon)
+
+
 def _menu(url):
     def pick(uid, email):
         def run(icon, item):
@@ -69,17 +96,35 @@ def _menu(url):
     def toggle_start(icon, item):
         set_autostart(not autostart_enabled())
 
+    def remove(uid, email):
+        def run(icon, item):
+            ask = f"Remove {email} from Claude Switcher?\nYou stay logged in if it is the active account."
+            if ctypes.windll.user32.MessageBoxW(None, ask, "Claude Switcher", 0x40024) == 6:  # TOPMOST|YESNO|QUESTION -> IDYES
+                switcher.remove(uid)
+                icon.update_menu()
+        return run
+
+    def name(a):
+        return f"{a['label']} ({a['email']})" if a["label"] else a["email"]
+
     def accounts():
         items = [
-            pystray.MenuItem(email, pick(uid, email), checked=lambda item, a=active: a, radio=True)
-            for uid, email, active in switcher.accounts()
+            pystray.MenuItem(name(a) + (" - login expired" if a["expired"] else ""), pick(a["uuid"], a["email"]),
+                             checked=lambda item, on=a["active"]: on, radio=True, enabled=not a["expired"])
+            for a in switcher.details()[0]
         ]
+        yield from items or [pystray.MenuItem("(none saved yet)", None, enabled=False)]
+
+    def removable():
+        items = [pystray.MenuItem(name(a), remove(a["uuid"], a["email"])) for a in switcher.details()[0]]
         yield from items or [pystray.MenuItem("(none saved yet)", None, enabled=False)]
 
     return pystray.Menu(
         pystray.MenuItem("Open dashboard", lambda icon, item: webbrowser.open(url), default=True),
         pystray.MenuItem("Accounts", pystray.Menu(accounts)),
+        pystray.MenuItem(f"Next account ({HOTKEY_TEXT})", next_account),
         pystray.MenuItem("Save current login", add),
+        pystray.MenuItem("Remove account", pystray.Menu(removable)),
         pystray.MenuItem("Start with Windows", toggle_start, checked=lambda item: autostart_enabled(),
                          visible=getattr(sys, "frozen", False)),
         pystray.MenuItem("Quit", lambda icon, item: icon.stop()),
@@ -105,7 +150,9 @@ def main():
     _, url = dashboard.start()
     if not switcher.accounts():
         webbrowser.open(url)  # first run: show where to start
-    pystray.Icon("claude-switcher", _icon(), "Claude Switcher", _menu(url)).run()
+    icon = pystray.Icon("claude-switcher", _icon(), "Claude Switcher", _menu(url))
+    threading.Thread(target=_hotkey_loop, args=(icon,), daemon=True).start()
+    icon.run()
 
 
 if __name__ == "__main__":

@@ -16,13 +16,21 @@ The installer is not code-signed, so Windows SmartScreen may warn you: click **M
 4. Run `claude /login` with your other account, then press **Save current login** again.
 5. Pick an account in the dashboard (or right-click the tray icon, then **Accounts**) to switch.
 
-New `claude` sessions use the active account. A session that is already running keeps the account it started with, so open a new one after switching.
+New `claude` sessions use the active account. A session that is already running keeps the account it started with, so open a new one after switching. The dashboard shows how many are running and asks before you switch (native `claude.exe` installs only).
+
+Also in the dashboard and tray:
+
+- **Next account:** `Ctrl+Alt+Shift+S` or the tray menu cycles through your saved accounts, skipping expired ones.
+- **Labels and colors** to tell accounts apart.
+- **Expired logins** are marked; log in again with `claude /login` and save.
+- **Backup / Restore** of the saved accounts. The file stays DPAPI-encrypted, so it only restores for the same Windows user.
+- **Remove account** from the tray menu.
 
 ## How it works
 
 Claude Code keeps its login in `~/.claude/.credentials.json` (`claudeAiOauth`) and the account identity in `~/.claude.json` (`oauthAccount`). Switching swaps those two entries. Saved logins are encrypted with Windows DPAPI in `%APPDATA%\ClaudeSwitcher\accounts.json`, so only your Windows user can read them.
 
-- Before each switch, the current login is saved back to its slot, so a refreshed token is not lost.
+- Before each switch, the current login is saved back to its slot, so a refreshed token is not lost. While the tray runs, the active account's copy is also refreshed every 30 seconds.
 - MCP tokens (`mcpOAuth`) are not touched.
 - Writes are atomic and keep a `.bak` of the previous file.
 - The dashboard listens on `127.0.0.1` only and never sends tokens to the page. Requests from other sites are rejected.
