@@ -13,6 +13,7 @@ from PIL import Image, ImageDraw
 import dashboard
 import switcher
 import updates
+import usage
 
 try:
     import winreg
@@ -100,6 +101,17 @@ def _menu(url):
     def toggle_updates(icon, item):
         switcher.set_setting("update_check", not switcher.get_setting("update_check", True))
 
+    def toggle_usage(icon, item):
+        try:
+            if usage.enabled():
+                usage.disable()
+                icon.notify("Your previous statusline is back.", "Usage alerts off")
+            else:
+                usage.enable()
+                icon.notify("You get a heads-up at 90% and 95% of a limit. Your statusline keeps working.", "Usage alerts on")
+        except Exception as e:
+            icon.notify(str(e), "Usage alerts failed")
+
     def remove(uid, email):
         def run(icon, item):
             ask = f"Remove {email} from Claude Switcher?\nYou stay logged in if it is the active account."
@@ -132,6 +144,8 @@ def _menu(url):
         pystray.MenuItem(lambda item: f"Update available: v{updates.available[0]}",
                          lambda icon, item: webbrowser.open(updates.available[1]),
                          visible=lambda item: updates.available is not None),
+        pystray.MenuItem("Usage alerts at 90% / 95%", toggle_usage, checked=lambda item: usage.enabled(),
+                         visible=getattr(sys, "frozen", False)),
         pystray.MenuItem("Check for updates automatically", toggle_updates,
                          checked=lambda item: switcher.get_setting("update_check", True)),
         pystray.MenuItem("Start with Windows", toggle_start, checked=lambda item: autostart_enabled(),
@@ -150,10 +164,13 @@ def _watch_loop(icon, every=30):
     nudge about a login that is not saved yet, and look for a newer release every 6 hours."""
     unsaved = told = None
     last_check = 0.0
+    alerted = set()
     while True:
         time.sleep(every)
         try:
             switcher.sync_active()
+            for text in usage.check(alerted):
+                icon.notify(text, "Claude Switcher")
             email = switcher.unsaved_email()
             if email and email != unsaved:
                 icon.notify(f"{email} is logged in but not saved. Open the dashboard to save it.", "Claude Switcher")
@@ -169,6 +186,9 @@ def _watch_loop(icon, every=30):
 
 
 def main():
+    if "--statusline" in sys.argv:  # Claude Code's statusLine hook: no tray, no single-instance check
+        usage.statusline_main()
+        return
     if not _single_instance():
         return
     _, url = dashboard.start()

@@ -6,6 +6,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import switcher
 import updates
+import usage
 
 PORT = 8766
 
@@ -31,8 +32,9 @@ button.pri{background:var(--acc);border-color:var(--acc);color:#fff}button:hover
 </style>
 <main>
 <h1>Claude Switcher</h1>
-<p class=sub>Saved accounts. New <code>claude</code> sessions use the active one; running sessions keep theirs.</p>
+<p class=sub>Saved accounts. New <code>claude</code> sessions use the active one; a running session may keep its own. <b>Switch &amp; resume</b> continues your latest chat on the new account.</p>
 <div id=warn></div><div id=note></div><div id=list></div><div id=msg></div>
+<p class=meta id=hint></p>
 <div class=row><a href=/api/backup download><button>Backup</button></a>
 <button id=restore>Restore…</button><input id=file type=file accept=.json hidden></div>
 <p class=meta>Backups stay encrypted and restore only on this Windows user. Log in to another account with <code>claude /login</code>, then press <b>Save current login</b>. Use only your own accounts.</p>
@@ -51,7 +53,7 @@ async function load(){
   $('warn').replaceChildren();
   if(j.update){const u=el('div','note','Version '+j.update[0]+' is available. ');
     const l=el('a','','Download');l.href=j.update[1];l.target='_blank';l.rel='noopener';u.append(l);$('warn').append(u)}
-  if(sessions)$('warn').append(el('div','note',sessions+' claude session'+(sessions>1?'s are':' is')+' running. Sessions keep the account they started with; open a new session after switching.'));
+  if(sessions)$('warn').append(el('div','note',sessions+' claude session'+(sessions>1?'s are':' is')+' running. A running session may keep the account it started with; use Switch & resume to continue your latest chat on the new account.'));
   $('note').replaceChildren();
   if(j.unsaved){const n=el('div','note');n.append(el('div','',j.unsaved+' is logged in but not saved yet. '));
     const b=el('button','pri','Save current login');b.onclick=()=>act('/api/save',0,'Saved.');n.append(b);$('note').append(n)}
@@ -61,15 +63,26 @@ async function load(){
     const m=el('div','mail',a.email);if(a.label)m.append(el('span','lbl',a.label));g.append(m);
     if(a.expired)g.append(el('div','exp','Login expired. Run claude /login, then Save current login.'));
     g.append(el('div','meta',[a.name,a.org,a.plan].filter(Boolean).join(' · ')));
+    if(a.usage){const u=el('div','meta','5h '+pct(a.usage.five_hour)+' · 7d '+pct(a.usage.seven_day)+' · seen '+ago(a.usage.age));
+      if(Math.max(a.usage.five_hour||0,a.usage.seven_day||0)>=90)u.className='exp';g.append(u)}
     c.append(g);
     if(a.active)c.append(el('span','badge','ACTIVE'));
-    else if(!a.expired){const s=el('button','pri','Switch');s.onclick=()=>{
-      if(sessions&&!confirm(sessions+' running claude session(s) will keep their current account. Switch anyway?'))return;
-      act('/api/switch',{uuid:a.uuid},'Switched to '+a.email+'. Start a new claude session.')};c.append(s)}
+    else if(!a.expired){
+      const go=(resume)=>{
+        if(sessions&&!resume&&!confirm(sessions+' running claude session(s) may keep their current account. Switch anyway?'))return;
+        act('/api/switch',{uuid:a.uuid,resume},resume?'Switched to '+a.email+'. Resuming your latest chat in a new window.':'Switched to '+a.email+'. Start a new claude session.')};
+      const s=el('button','pri','Switch');s.onclick=()=>go(false);c.append(s);
+      const r=el('button','','Switch & resume');r.title='Switch, then continue your latest chat in a new window';r.onclick=()=>go(true);c.append(r)}
     const t=el('button','','Label');t.onclick=()=>editLabel(a,j.colors);c.append(t);
     const d=el('button','','Remove');d.onclick=()=>{if(confirm('Remove '+a.email+' from the switcher? You stay logged in if active.'))act('/api/remove',{uuid:a.uuid},'Removed.')};
     c.append(d);return c}));
+  const seen=j.usage_diag&&j.usage_diag.seen,none=!j.accounts.some(a=>a.usage);
+  $('hint').textContent=!j.usage_enabled?'Usage alerts are off. Turn them on from the tray menu (installed app).'
+    :(none&&seen)?'Usage alerts are on, but Claude Code is not sending usage numbers here (it depends on your plan and Claude Code version). Fields seen: '+seen.keys.join(', ')+'.'
+    :(none?'Usage alerts are on. Numbers appear after your next message in a Claude Code session.':'');
   if(!j.accounts.length&&!j.unsaved)$('list').append(el('p','meta','No accounts yet. Run claude /login first.'))}
+const pct=v=>v==null?'?':Math.round(v)+'%';
+const ago=s=>s>=3600?Math.floor(s/3600)+'h ago':Math.max(1,Math.floor(s/60))+'m ago';
 function editLabel(a,colors){
   const l=prompt('Label for '+a.email+' (max 24 chars, empty to clear)',a.label);if(l===null)return;
   const names=['orange','green','blue','purple','yellow','red'];
@@ -111,8 +124,11 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, PAGE.encode(), "text/html")
         if self.path == "/api/accounts":
             accounts, unsaved = switcher.details()
+            for a in accounts:
+                a["usage"] = usage.for_dashboard(a["uuid"])
             return self._send(200, {"accounts": accounts, "unsaved": unsaved, "sessions": switcher.running_sessions(),
-                                    "colors": switcher.COLORS, "update": updates.available})
+                                    "colors": switcher.COLORS, "update": updates.available,
+                                    "usage_enabled": usage.enabled(), "usage_diag": usage.diag()})
         if self.path == "/api/backup":
             data = json.dumps(switcher.export_store(), indent=2).encode()
             self.send_response(200)
@@ -132,6 +148,8 @@ class Handler(BaseHTTPRequestHandler):
                 switcher.save_current()
             elif self.path == "/api/switch":
                 switcher.switch(body["uuid"])
+                if body.get("resume"):
+                    switcher.resume_latest()
             elif self.path == "/api/remove":
                 switcher.remove(body["uuid"])
             elif self.path == "/api/label":

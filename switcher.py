@@ -16,7 +16,7 @@ import time
 from ctypes import wintypes
 from pathlib import Path
 
-__version__ = "1.3.1"
+__version__ = "1.4.0"
 
 HOME = Path.home()
 CRED = HOME / ".claude" / ".credentials.json"
@@ -246,6 +246,41 @@ def sync_active(settle=2.0):
             return True
     except (OSError, ValueError, KeyError):
         return False
+
+
+PROJECTS = HOME / ".claude" / "projects"
+
+
+def latest_session():
+    """(session_id, cwd) of the most recently written conversation transcript, or None.
+    Transcripts are ~/.claude/projects/<project>/<session-id>.jsonl and each line carries its `cwd`."""
+    try:
+        files = sorted(PROJECTS.glob("*/*.jsonl"), key=lambda p: p.stat().st_mtime, reverse=True)[:5]
+    except OSError:
+        return None
+    for f in files:
+        try:
+            with open(f, encoding="utf-8") as fh:
+                for _, line in zip(range(80), fh):
+                    try:
+                        cwd = json.loads(line).get("cwd")
+                    except ValueError:
+                        continue
+                    if cwd and Path(cwd).is_dir():
+                        return f.stem, cwd
+        except OSError:
+            continue
+    return None
+
+
+def resume_latest():
+    """Open a new console that resumes the most recent conversation (run after a switch to continue it on the new account)."""
+    found = latest_session()
+    if not found:
+        raise ValueError("no recent conversation found")
+    sid, cwd = found
+    subprocess.Popen(["cmd.exe", "/k", "claude", "--resume", sid], cwd=cwd, creationflags=0x10)  # CREATE_NEW_CONSOLE
+    return cwd
 
 
 _NO_WINDOW = 0x08000000  # CREATE_NO_WINDOW

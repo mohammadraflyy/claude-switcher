@@ -18,7 +18,7 @@ The installer is not code-signed, so Windows SmartScreen may warn you: click **M
 4. Run `claude /login` with your other account, then press **Save current login** again.
 5. Pick an account in the dashboard (or right-click the tray icon, then **Accounts**) to switch.
 
-New `claude` sessions use the active account. A session that is already running keeps the account it started with, so open a new one after switching. The dashboard shows how many are running and asks before you switch (native and npm installs).
+New `claude` sessions use the active account. Whether a session that is already running notices the switch is **not verified**, so do not rely on it. To keep a conversation going on the new account, press **Switch & resume** in the dashboard: it switches, then opens a new window with `claude --resume` for your most recent conversation. The dashboard also shows how many sessions are running and asks before a plain switch (native and npm installs).
 
 Also in the dashboard and tray:
 
@@ -27,6 +27,7 @@ Also in the dashboard and tray:
 - **Expired logins** are marked; log in again with `claude /login` and save.
 - **Backup / Restore** of the saved accounts. The file stays DPAPI-encrypted, so it only restores for the same Windows user.
 - **Remove account** from the tray menu.
+- **Usage alerts (opt-in):** turn on *Usage alerts at 90% / 95%* in the tray menu. Claude Code sends the 5-hour and 7-day usage to its statusline command; Claude Switcher points `statusLine` in `~/.claude/settings.json` at itself, records the numbers, and runs your previous statusline unchanged. At 90% and 95% you get a notification that names the saved account with the most headroom and reminds you of the hotkey. **It never switches by itself.** Turning it off restores your previous statusline, and the first version of `settings.json` is kept as `settings.json.switcher-bak`. Numbers are only known for the account you are using, and only while a session is open (the field depends on your plan and Claude Code version). Switching accounts only to get around a usage limit may go against Anthropic's terms; this feature leaves that decision to you.
 - **Unsaved login notice:** after `claude /login` the tray reminds you to save the new login.
 - **Update check:** every 6 hours the tray makes one anonymous request to the GitHub Releases API and shows a banner when a newer version exists. Nothing about you is sent. Switch it off with **Check for updates automatically** in the tray menu.
 

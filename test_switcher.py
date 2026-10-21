@@ -201,6 +201,155 @@ class UpdatesAndNoticesTest(SwitchTest):
         self.assertEqual(switcher._npm_sessions(), before + 1)
 
 
+class UsageTest(SwitchTest):
+    def setUp(self):
+        super().setUp()
+        import usage
+        self.usage = usage
+        d = Path(tempfile.mkdtemp())
+        orig = usage.SETTINGS
+        usage.SETTINGS = d / "settings.json"
+        self.addCleanup(setattr, usage, "SETTINGS", orig)
+        self.settings_dir = d
+
+    def put(self, uid, five, seven, ts=None, resets="r1"):
+        data = self.usage.load()
+        data[uid] = {"ts": ts or __import__("time").time(),
+                     "five_hour": {"pct": five, "resets_at": resets}, "seven_day": {"pct": seven, "resets_at": resets}}
+        switcher._write(self.usage._path(), data)
+
+    def test_record_reads_rate_limits_and_ignores_other_payloads(self):
+        payload = {"rate_limits": {"five_hour": {"used_percentage": 96, "resets_at": "2026-10-21T10:00:00Z"},
+                                   "seven_day": {"used_percentage": 40, "resets_at": 123}}}
+        self.assertTrue(self.usage.record(json.dumps(payload)))
+        self.assertEqual(self.usage.load()["u1"]["five_hour"]["pct"], 96.0)
+        self.assertTrue(self.usage.record("﻿" + json.dumps(payload)))  # BOM-prefixed input still parses
+        accounts = lambda: {k: v for k, v in self.usage.load().items() if k != self.usage.DIAG}
+        before = accounts()
+        for bad in ("{}", "junk", json.dumps({"rate_limits": {"five_hour": {"used_percentage": 5}}}), "[]"):
+            self.assertFalse(self.usage.record(bad))
+        self.assertEqual(accounts(), before)
+
+    def test_missing_rate_limits_leaves_a_one_time_diagnostic_without_values(self):
+        doc = {"model": {"display_name": "SECRET-MODEL"}, "workspace": {"current_dir": "C:/private"}}
+        self.assertFalse(self.usage.record(json.dumps(doc)))
+        first = self.usage.diag()
+        self.assertEqual(first["seen"], {"keys": ["model", "workspace"], "rate_limits": None})
+        self.assertNotIn("SECRET-MODEL", self.usage._path().read_text())   # names only, never values
+        self.assertNotIn("private", self.usage._path().read_text())
+        self.assertFalse(self.usage.record(json.dumps(doc)))
+        self.assertEqual(self.usage.diag()["ts"], first["ts"])              # unchanged keys: not rewritten
+        self.assertTrue(self.usage.record(json.dumps({"rate_limits": {
+            "five_hour": {"used_percentage": 1}, "seven_day": {"used_percentage": 2}}})))
+        self.assertIsNone(self.usage.diag())                                # numbers flowing: explanation dropped
+
+    def test_alerts_fire_once_per_level_and_reset_below_90(self):
+        switcher.save_current()
+        self.login(2, "tok2")
+        switcher.save_current()
+        switcher.switch("u1")
+        self.put("u2", 12.0, 30.0)
+        seen = set()
+        self.put("u1", 96.0, 40.0)
+        first = self.usage.check(seen)
+        self.assertEqual(len(first), 1)
+        self.assertIn("96%", first[0])
+        self.assertIn("5-hour", first[0])
+        self.assertIn("a2@x.test was at 12%", first[0])
+        self.assertEqual(self.usage.check(seen), [])           # same level, same window: silent
+        self.put("u1", 50.0, 40.0)
+        self.assertEqual(self.usage.check(seen), [])           # back under 90: forgotten
+        self.put("u1", 91.0, 40.0)
+        self.assertEqual(len(self.usage.check(seen)), 1)       # crossing again alerts again
+        self.put("u1", 97.0, 40.0)
+        self.assertEqual(len(self.usage.check(seen)), 1)       # 90 -> 95 is a new level
+
+    def test_stale_usage_is_ignored(self):
+        switcher.save_current()
+        self.put("u1", 99.0, 99.0, ts=__import__("time").time() - 3 * 3600)
+        self.assertEqual(self.usage.check(set()), [])
+
+    def test_enable_disable_keeps_original_statusline_and_old_backup(self):
+        original = {"model": "x", "tags": ["a", "b"], "statusLine": {"type": "command", "command": "orig cmd", "padding": 1}}
+        original_bytes = json.dumps(original, separators=(",", ":")).encode()  # deliberately not our own formatting
+        self.usage.SETTINGS.write_bytes(original_bytes)
+        sentinel = self.settings_dir / "settings.json.bak"
+        sentinel.write_text("older backup")
+        ours = '"C:\\x\\ClaudeSwitcher.exe" --statusline'
+        self.usage.enable(ours)
+        now = json.loads(self.usage.SETTINGS.read_text())
+        self.assertEqual(now["statusLine"], {"type": "command", "command": ours, "padding": 1})
+        self.assertEqual(now["model"], "x")
+        self.assertTrue(self.usage.enabled())
+        bak = self.settings_dir / "settings.json.switcher-bak"
+        self.assertEqual(json.loads(bak.read_text()), original)
+        self.assertEqual(sentinel.read_text(), "older backup")  # never touch someone else's .bak
+        self.usage.enable(ours)                                 # second call changes nothing
+        self.assertEqual(json.loads(bak.read_text()), original)
+        self.usage.disable()
+        self.assertEqual(self.usage.SETTINGS.read_bytes(), original_bytes)  # untouched since: restored byte for byte
+        self.assertFalse(self.usage.enabled())
+
+    def test_enable_without_a_previous_statusline_and_disable_removes_it(self):
+        self.usage.SETTINGS.write_text(json.dumps({"model": "x"}))
+        self.usage.enable('"x.exe" --statusline')
+        self.usage.disable()
+        self.assertEqual(json.loads(self.usage.SETTINGS.read_text()), {"model": "x"})
+
+    def test_disable_leaves_a_statusline_the_user_changed_since(self):
+        self.usage.SETTINGS.write_text(json.dumps({"statusLine": {"type": "command", "command": "orig"}}))
+        self.usage.enable('"x.exe" --statusline')
+        s = json.loads(self.usage.SETTINGS.read_text())
+        s["statusLine"]["command"] = "user changed it"
+        self.usage.SETTINGS.write_text(json.dumps(s))
+        self.usage.disable()
+        self.assertEqual(json.loads(self.usage.SETTINGS.read_text())["statusLine"]["command"], "user changed it")
+
+    def test_statusline_records_and_passes_the_previous_statusline_through(self):
+        switcher.save_current()
+        switcher.set_setting("statusline_original", {
+            "type": "command", "command": 'python -c "import sys; sys.stdout.write(\'OUT:\' + sys.stdin.read()[:6])"'})
+        payload = json.dumps({"rate_limits": {"five_hour": {"used_percentage": 7}, "seven_day": {"used_percentage": 8}}})
+        out = []
+        self.usage.statusline_main(read=lambda: payload.encode(), write=out.append)
+        self.assertEqual(out, [b'OUT:{"rate'])
+        self.assertEqual(self.usage.load()["u1"]["seven_day"]["pct"], 8.0)
+
+    def test_statusline_survives_garbage_and_a_broken_chain(self):
+        switcher.set_setting("statusline_original", {"type": "command", "command": "no-such-program-xyz"})
+        out = []
+        self.usage.statusline_main(read=lambda: b"\xff\xfe not json", write=out.append)  # must not raise
+        self.assertEqual(self.usage.load(), {})
+
+    def test_latest_session_and_resume(self):
+        import os
+        import subprocess
+        root = Path(tempfile.mkdtemp())
+        a, b = root / "workA", root / "workB"
+        a.mkdir(), b.mkdir()
+        switcher.PROJECTS = root / "projects"
+        self.addCleanup(setattr, switcher, "PROJECTS", Path.home() / ".claude" / "projects")
+        (switcher.PROJECTS / "pa").mkdir(parents=True)
+        (switcher.PROJECTS / "pb").mkdir(parents=True)
+        old, new = switcher.PROJECTS / "pa" / "old-id.jsonl", switcher.PROJECTS / "pb" / "new-id.jsonl"
+        old.write_text(json.dumps({"cwd": str(a)}) + "\n")
+        new.write_text("not json\n" + json.dumps({"cwd": str(b)}) + "\n")
+        os.utime(old, (1, 1))
+        self.assertEqual(switcher.latest_session(), ("new-id", str(b)))
+        new.write_text(json.dumps({"cwd": str(root / "gone")}) + "\n")  # newest points at a folder that no longer exists
+        self.assertEqual(switcher.latest_session(), ("old-id", str(a)))
+        calls = []
+        orig = subprocess.Popen
+        subprocess.Popen = lambda *args, **kw: calls.append((args, kw))
+        self.addCleanup(setattr, subprocess, "Popen", orig)
+        self.assertEqual(switcher.resume_latest(), str(a))
+        self.assertEqual(calls[0][0][0], ["cmd.exe", "/k", "claude", "--resume", "old-id"])
+        self.assertEqual(calls[0][1]["cwd"], str(a))
+        old.unlink(), new.unlink()
+        with self.assertRaises(ValueError):
+            switcher.resume_latest()
+
+
 class DashboardTest(SwitchTest):
     def setUp(self):
         super().setUp()
@@ -243,6 +392,28 @@ class DashboardTest(SwitchTest):
         self.assertEqual(len(switcher.accounts()), 1)
         self.assertEqual(self.call("POST", "/api/restore", {"accounts": {"u9": {"email": "e", "blob": "AAAA"}}})[0], 400)
         self.assertEqual(self.call("POST", "/api/restore", backup, {"Origin": "http://evil.test"})[0], 403)
+
+    def test_usage_fields_and_switch_with_resume(self):
+        switcher.save_current()
+        self.login(2, "tok2")
+        switcher.save_current()
+        status, text = self.call("GET", "/api/accounts")
+        j = json.loads(text)
+        self.assertIn("usage_enabled", j)
+        self.assertTrue(all("usage" in a for a in j["accounts"]))
+        self.assertNotIn("tok", text)
+        resumed = []
+        orig = switcher.resume_latest
+        switcher.resume_latest = lambda: resumed.append(1) or "C:/x"
+        self.addCleanup(setattr, switcher, "resume_latest", orig)
+        self.assertEqual(self.call("POST", "/api/switch", {"uuid": "u1", "resume": True})[0], 200)
+        self.assertEqual((switcher.current(), resumed), ("u1", [1]))
+        self.assertEqual(self.call("POST", "/api/switch", {"uuid": "u2"})[0], 200)
+        self.assertEqual(resumed, [1])                       # plain switch does not open a window
+        switcher.resume_latest = lambda: (_ for _ in ()).throw(ValueError("no recent conversation found"))
+        status, text = self.call("POST", "/api/switch", {"uuid": "u1", "resume": True})
+        self.assertEqual(status, 400)
+        self.assertIn("no recent conversation", text)
 
     def test_cross_site_and_rebinding_blocked(self):
         switcher.save_current()
